@@ -56,7 +56,7 @@ def call_gemini(prompt: str, temperature: float) -> dict:
     if not GEMINI_API_KEY:
         raise RuntimeError("GEMINI_API_KEY não configurado. Defina nos Secrets do Streamlit Cloud.")
 
-    url = f"https://generativelanguage.googleapis.com/v1/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
     payload = {
         "contents": [{"role": "user", "parts": [{"text": prompt}]}],
         "generationConfig": {"temperature": float(temperature)},
