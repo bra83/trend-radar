@@ -1,36 +1,87 @@
-import os
-import time
 import streamlit as st
+import json
 from google import genai
 from google.genai import types
 
-# Streamlit Secrets: coloque GEMINI_API_KEY lá
-API_KEY = st.secrets.get("GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY")
+st.set_page_config(page_title="Trend Radar 3D", layout="wide")
+st.title("Trend Radar 3D — Perplexity → Gemini")
+
+API_KEY = st.secrets.get("GEMINI_API_KEY")
+MODEL = st.secrets.get("GEMINI_MODEL", "gemini-1.5-flash")
+
 if not API_KEY:
-    st.error("Faltou configurar GEMINI_API_KEY em Settings -> Secrets.")
+    st.error("Configure GEMINI_API_KEY em Settings → Secrets.")
     st.stop()
 
 client = genai.Client(api_key=API_KEY)
 
-MODEL = st.secrets.get("GEMINI_MODEL", "gemini-1.5-flash")  # você pode trocar depois
+def analyze_text(text):
+    prompt = f"""
+Você é um analista de mercado especializado em negócios de impressão 3D no Brasil.
 
-def gemini_with_backoff(prompt: str, temperature: float = 0.4, max_attempts: int = 5) -> str:
-    last_err = None
-    for attempt in range(1, max_attempts + 1):
+Analise o texto abaixo e identifique oportunidades estruturadas.
+
+Retorne SOMENTE JSON no formato:
+
+{{
+  "opportunities": [
+    {{
+      "product": "",
+      "niche": "",
+      "estimated_ticket_brl": "",
+      "saturation_level": "low|medium|high",
+      "margin_potential": "low|medium|high",
+      "target_audience": "",
+      "competitive_edge": "",
+      "mvp_suggestion": "",
+      "risk_level": "low|medium|high"
+    }}
+  ]
+}}
+
+Texto:
+{text}
+"""
+
+    response = client.models.generate_content(
+        model=MODEL,
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            temperature=0.3,
+            max_output_tokens=1500
+        )
+    )
+
+    return response.text
+
+st.subheader("Cole o texto do Perplexity")
+input_text = st.text_area("", height=250)
+
+if st.button("Analisar"):
+    if not input_text.strip():
+        st.warning("Cole o texto primeiro.")
+        st.stop()
+
+    with st.spinner("Analisando..."):
         try:
-            resp = client.models.generate_content(
-                model=MODEL,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    temperature=float(temperature),
-                    max_output_tokens=1200,
-                ),
-            )
-            # resp.text já vem pronto
-            return (resp.text or "").strip()
+            raw = analyze_text(input_text)
+            data = json.loads(raw)
+
+            opportunities = data.get("opportunities", [])
+
+            st.success(f"{len(opportunities)} oportunidades identificadas")
+
+            for i, item in enumerate(opportunities, 1):
+                with st.expander(f"{i}. {item['product']}"):
+                    col1, col2 = st.columns(2)
+                    col1.write(f"**Nicho:** {item['niche']}")
+                    col1.write(f"**Ticket estimado:** {item['estimated_ticket_brl']}")
+                    col1.write(f"**Saturação:** {item['saturation_level']}")
+                    col1.write(f"**Margem potencial:** {item['margin_potential']}")
+                    col2.write(f"**Público:** {item['target_audience']}")
+                    col2.write(f"**Diferencial:** {item['competitive_edge']}")
+                    col2.write(f"**MVP:** {item['mvp_suggestion']}")
+                    col2.write(f"**Risco:** {item['risk_level']}")
+
         except Exception as e:
-            last_err = e
-            # backoff simples (resolve 429 na maioria dos casos)
-            sleep_s = min(20, 2 ** attempt)
-            time.sleep(sleep_s)
-    raise last_err
+            st.error(f"Erro: {e}")
