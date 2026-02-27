@@ -61,8 +61,17 @@ def call_gemini(prompt: str, temperature: float) -> dict:
         "contents": [{"role": "user", "parts": [{"text": prompt}]}],
         "generationConfig": {"temperature": float(temperature)},
     }
+
     r = requests.post(url, json=payload, timeout=180)
-    r.raise_for_status()
+
+    if r.status_code >= 400:
+        # Avoid leaking URL (contains key). Show only status and a short response excerpt.
+        snippet = (r.text or "")[:1000]
+        raise requests.HTTPError(
+            f"Gemini HTTP {r.status_code}. Response (first 1000 chars): {snippet}",
+            response=r,
+        )
+
     return r.json()
 
 def parse_gemini_json(api_response: dict) -> dict:
@@ -171,8 +180,15 @@ if run_now:
     prompt = build_prompt(clipped, country, prompt_style)
 
     with st.spinner("Chamando Gemini e estruturando dados..."):
-        api_response = run_with_backoff(prompt, temperature, max_attempts=4)
-        result = parse_gemini_json(api_response)
+        try:
+            api_response = run_with_backoff(prompt, temperature, max_attempts=4)
+            result = parse_gemini_json(api_response)
+        except requests.HTTPError as e:
+            st.error(f"Falha na chamada do Gemini: {e}")
+            st.stop()
+        except Exception as e:
+            st.error(f"Falha inesperada: {e}")
+            st.stop()
 
     st.session_state["last_result"] = result
     st.session_state["last_input_hash"] = input_hash
